@@ -1,0 +1,13 @@
+com\itc\demo\dto\request\LoginRequestDTO.class
+com\itc\demo\service\AuthService.class
+com\itc\demo\repository\UserRepository.class
+com\itc\demo\DonationmanagementApplication.class
+com\itc\demo\controller\AuthController.class
+com\itc\demo\service\impl\AuthServiceImpl.class
+com\itc\demo\dto\response\LoginResponseDTO.class
+com\itc\demo\dto\response\UserResponseDTO.class
+com\itc\demo\util\JwtUtil.class
+com\itc\demo\security\CustomUserDetailsService.class
+com\itc\demo\enums\Role.class
+com\itc\demo\config\SecurityConfig.class
+com\itc\demo\entity\User.class

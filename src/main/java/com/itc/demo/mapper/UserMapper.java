@@ -18,17 +18,18 @@ public class UserMapper {
         User user = new User();
         user.setName(request.getName());
         user.setEmail(request.getEmail());
-        user.setPassword(request.getPassword());
+        user.setPassword(encoder.encode(request.getPassword())); // ✅ FIX
         user.setRole(request.getRole());
         return user;
     }
+
 
     public UserResponseDTO toDTO(User user){
         UserResponseDTO dto = new UserResponseDTO();
         dto.setId(user.getId());
         dto.setName(user.getName());
         dto.setEmail(user.getEmail());
-        dto.setRole(dto.getRole());
+        dto.setRole(user.getRole());
         return dto;
     }
 }

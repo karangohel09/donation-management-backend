@@ -9,4 +9,8 @@ import lombok.Setter;
 @AllArgsConstructor
 public class LoginResponseDTO {
     private String token;
+    private Long id;
+    private String name;
+    private String email;
+    private String role;
 }

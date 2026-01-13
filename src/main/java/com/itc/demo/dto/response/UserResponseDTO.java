@@ -1,5 +1,6 @@
 package com.itc.demo.dto.response;
 
+import com.itc.demo.enums.Role;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -11,5 +12,5 @@ public class UserResponseDTO {
     private Long id;
     private String name;
     private String email;
-    private String role;
+    private Role role;
 }

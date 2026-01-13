@@ -32,7 +32,9 @@ public class UserController {
 
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PutMapping("/{id}/role")
-    public UserResponseDTO updateUserRole(@PathVariable Long userId, @RequestBody UpdateRoleRequest request){
-            return service.updateUserRole(userId,request.getRole());
+    public UserResponseDTO updateUserRole(@PathVariable("id") Long userId,
+                                          @RequestBody UpdateRoleRequest request) {
+        return service.updateUserRole(userId, request.getRole());
     }
+
 }

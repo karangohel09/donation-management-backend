@@ -30,7 +30,7 @@ public class DataInitializer {
 
             userRepository.save(superAdmin);
 
-            System.out.println("✅ SUPER_ADMIN created successfully");
+            System.out.println("SUPER_ADMIN created successfully");
         }
     }
 }

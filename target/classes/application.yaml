@@ -20,5 +20,5 @@ spring:
         format_sql: true
 
 jwt:
-  secret: mysupersecretkeymysupersecretkey
-  expiration: 86400000   # ✅ FIXED KEY NAME
+  secret: ITC_DONATION_MANAGEMENT_SYSTEM_SECRET_2026!!!
+  expiration: 86400000

@@ -7,14 +7,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
 
 @Component
 @RequiredArgsConstructor
@@ -31,8 +29,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String path = request.getServletPath();
 
-        // 🔓 Allow login & auth APIs without JWT
-        if (path.startsWith("/api/auth")) {
+        // Only skip JWT filter for login endpoint
+        if (path.equals("/api/auth/login")) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -44,7 +42,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             try {
                 String email = jwtUtil.extractUsername(token);
-                String role = jwtUtil.extractRole(token);
 
                 if (email != null &&
                         SecurityContextHolder.getContext().getAuthentication() == null) {
@@ -58,7 +55,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                 new UsernamePasswordAuthenticationToken(
                                         userDetails,
                                         null,
-                                        List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                                        userDetails.getAuthorities()
                                 );
 
                         SecurityContextHolder.getContext().setAuthentication(authToken);
@@ -66,12 +63,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             } catch (Exception e) {
                 // Invalid token → ignore
+                logger.debug("JWT validation failed", e);
             }
         }
 
         filterChain.doFilter(request, response);
     }
-
-
 }
-

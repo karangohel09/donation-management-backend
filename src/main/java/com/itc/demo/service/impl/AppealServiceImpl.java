@@ -4,6 +4,8 @@ import com.itc.demo.dto.request.ApproveAppealRequest;
 import com.itc.demo.dto.request.CreateAppealRequest;
 import com.itc.demo.dto.request.UpdateAppealRequest;
 import com.itc.demo.dto.response.AppealResponseDTO;
+import com.itc.demo.dto.response.ApprovalResponseDTO;
+import com.itc.demo.dto.response.UserResponseDTO;
 import com.itc.demo.entity.Appeal;
 import com.itc.demo.entity.Document;
 import com.itc.demo.entity.User;
@@ -176,5 +178,34 @@ public class AppealServiceImpl implements AppealService {
         }
 
         documentRepository.delete(document);
+    }
+    @Override
+    public List<ApprovalResponseDTO> getPendingApprovals() {
+        return appealRepository.findByStatus(AppealStatus.PENDING)
+                .stream()
+                .map(appeal -> {
+                    ApprovalResponseDTO dto = new ApprovalResponseDTO();
+                    dto.setId(appeal.getId());
+                    dto.setTitle(appeal.getTitle());
+                    dto.setDescription(appeal.getDescription());
+                    dto.setEstimatedAmount(appeal.getEstimatedAmount());
+                    dto.setBeneficiaryCategory(appeal.getBeneficiaryCategory());
+                    dto.setDuration(appeal.getDuration());
+                    dto.setStatus(appeal.getStatus().toString());
+                    dto.setCreatedAt(appeal.getCreatedAt());
+                    dto.setDocuments(appeal.getDocuments().size());
+
+                    if (appeal.getCreatedBy() != null) {
+                        UserResponseDTO userDTO = new UserResponseDTO();
+                        userDTO.setId(appeal.getCreatedBy().getId());
+                        userDTO.setName(appeal.getCreatedBy().getName());
+                        userDTO.setEmail(appeal.getCreatedBy().getEmail());
+                        userDTO.setRole(appeal.getCreatedBy().getRole());
+                        dto.setCreatedBy(userDTO);
+                    }
+
+                    return dto;
+                })
+                .collect(Collectors.toList());
     }
 }

@@ -4,6 +4,7 @@ import com.itc.demo.dto.request.ApproveAppealRequest;
 import com.itc.demo.dto.request.CreateAppealRequest;
 import com.itc.demo.dto.request.UpdateAppealRequest;
 import com.itc.demo.dto.response.AppealResponseDTO;
+import com.itc.demo.dto.response.ApprovalResponseDTO;
 import com.itc.demo.entity.Document;
 import com.itc.demo.enums.AppealStatus;
 import org.springframework.web.multipart.MultipartFile;
@@ -24,4 +25,5 @@ public interface AppealService {
     void uploadDocument(Long appealId, MultipartFile file, Long userId) throws IOException;
     List<Document> getAppealDocuments(Long appealId);
     void deleteDocument(Long documentId);
+    List<ApprovalResponseDTO> getPendingApprovals();
 }

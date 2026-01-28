@@ -4,7 +4,8 @@ import com.itc.demo.dto.request.ApproveAppealRequest;
 import com.itc.demo.dto.request.CreateAppealRequest;
 import com.itc.demo.dto.request.UpdateAppealRequest;
 import com.itc.demo.dto.response.AppealResponseDTO;
-import com.itc.demo.entity.Document;
+import com.itc.demo.dto.response.DocumentResponseDTO;
+import com.itc.demo.mapper.DocumentMapper;
 import com.itc.demo.service.AppealService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,9 +23,10 @@ import java.util.List;
 public class AppealController {
 
     private final AppealService appealService;
-
-    public AppealController(AppealService appealService) {
+    private final DocumentMapper documentMapper;
+    public AppealController(AppealService appealService, DocumentMapper documentMapper) {
         this.appealService = appealService;
+        this.documentMapper = documentMapper;
     }
 
     @GetMapping
@@ -67,16 +69,22 @@ public class AppealController {
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('MISSION_ADMIN') or hasRole('FINANCE_ADMIN')")
     public ResponseEntity<AppealResponseDTO> approveAppeal(
             @PathVariable Long id,
-            @RequestBody ApproveAppealRequest request) {
-        return ResponseEntity.ok(appealService.approveAppeal(id, request));
+            @RequestBody ApproveAppealRequest request,
+            Authentication authentication) {
+
+        Long userId = getUserIdFromAuth(authentication);
+        return ResponseEntity.ok(appealService.approveAppeal(id, request, userId));
     }
 
     @PostMapping("/{id}/reject")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('MISSION_ADMIN') or hasRole('FINANCE_ADMIN')")
     public ResponseEntity<AppealResponseDTO> rejectAppeal(
             @PathVariable Long id,
-            @RequestParam String reason) {
-        return ResponseEntity.ok(appealService.rejectAppeal(id, reason));
+            @RequestParam String reason,
+            Authentication authentication) {
+
+        Long userId = getUserIdFromAuth(authentication);
+        return ResponseEntity.ok(appealService.rejectAppeal(id, reason, userId));
     }
 
     private Long getUserIdFromAuth(Authentication authentication) {
@@ -97,8 +105,12 @@ public class AppealController {
     }
 
     @GetMapping("/{id}/documents")
-    public ResponseEntity<List<Document>> getAppealDocuments(@PathVariable Long id) {
-        return ResponseEntity.ok(appealService.getAppealDocuments(id));
+    @PreAuthorize("authenticated")
+    public ResponseEntity<List<DocumentResponseDTO>> getAppealDocuments(@PathVariable Long id) {
+        return ResponseEntity.ok(appealService.getAppealDocuments(id)
+                .stream()
+                .map(documentMapper::toDTO)
+                .collect(java.util.stream.Collectors.toList()));
     }
 
     @DeleteMapping("/documents/{documentId}")

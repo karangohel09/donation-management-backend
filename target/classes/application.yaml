@@ -19,6 +19,20 @@ spring:
       hibernate:
         format_sql: true
 
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: 12102080601055@adit.ac.in
+    password: 9624247216
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+    default-encoding: UTF-8
+
 jwt:
   secret: ITC_DONATION_MANAGEMENT_SYSTEM_SECRET_2026!!!
   expiration: 86400000

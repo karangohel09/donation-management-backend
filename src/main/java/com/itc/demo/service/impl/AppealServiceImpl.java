@@ -4,6 +4,8 @@ import com.itc.demo.dto.request.ApproveAppealRequest;
 import com.itc.demo.dto.request.CreateAppealRequest;
 import com.itc.demo.dto.request.UpdateAppealRequest;
 import com.itc.demo.dto.response.AppealResponseDTO;
+import com.itc.demo.dto.response.ApprovalResponseDTO;
+import com.itc.demo.dto.response.UserResponseDTO;
 import com.itc.demo.entity.Appeal;
 import com.itc.demo.entity.Document;
 import com.itc.demo.entity.User;
@@ -13,26 +15,33 @@ import com.itc.demo.repository.AppealRepository;
 import com.itc.demo.repository.DocumentRepository;
 import com.itc.demo.repository.UserRepository;
 import com.itc.demo.service.AppealService;
+import com.itc.demo.service.CommunicationService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
+@Transactional
 public class AppealServiceImpl implements AppealService {
-
+    private final CommunicationService communicationService;
     private final AppealRepository appealRepository;
     private final UserRepository userRepository;
     private final AppealMapper appealMapper;
     private final DocumentRepository documentRepository;
-    public AppealServiceImpl(AppealRepository appealRepository,
+    public AppealServiceImpl(CommunicationService communicationService, AppealRepository appealRepository,
                              UserRepository userRepository,
                              AppealMapper appealMapper, DocumentRepository documentRepository) {
+        this.communicationService = communicationService;
         this.appealRepository = appealRepository;
         this.userRepository = userRepository;
         this.appealMapper = appealMapper;
@@ -94,23 +103,48 @@ public class AppealServiceImpl implements AppealService {
     }
 
     @Override
-    public AppealResponseDTO approveAppeal(Long id, ApproveAppealRequest request) {
+    public AppealResponseDTO approveAppeal(Long id, ApproveAppealRequest request, Long approverUserId) {
         Appeal appeal = appealRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Appeal not found"));
 
         appeal.setStatus(AppealStatus.APPROVED);
         appeal.setApprovedAmount(request.getApprovedAmount());
+        appeal.setApprovalRemarks(request.getRemarks());      // ✅ Add this
+        appeal.setApprovalDate(LocalDateTime.now());          // ✅ Add this
+        appeal.setApproverId(approverUserId);                 // ✅ Add this
 
-        return appealMapper.toDTO(appealRepository.save(appeal));
+        Appeal saved = appealRepository.save(appeal);
+
+        // ✅ Add this - trigger donor communication
+        try {
+            communicationService.notifyDonorsOnApproval(saved, approverUserId);
+        } catch (Exception e) {
+            log.error("Error sending notifications: " + e.getMessage());
+        }
+
+        return appealMapper.toDTO(saved);
     }
 
     @Override
-    public AppealResponseDTO rejectAppeal(Long id, String reason) {
+    public AppealResponseDTO rejectAppeal(Long id, String reason, Long approverUserId) {
         Appeal appeal = appealRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Appeal not found"));
 
         appeal.setStatus(AppealStatus.REJECTED);
-        return appealMapper.toDTO(appealRepository.save(appeal));
+        appeal.setApprovalRemarks(reason);                    // ✅ Add this
+        appeal.setApprovalDate(LocalDateTime.now());          // ✅ Add this
+        appeal.setApproverId(approverUserId);                 // ✅ Add this
+
+        Appeal saved = appealRepository.save(appeal);
+
+        // ✅ Add this - trigger donor communication
+        try {
+            communicationService.notifyDonorsOnRejection(saved, reason);
+        } catch (Exception e) {
+            log.error("Error sending notifications: " + e.getMessage());
+        }
+
+        return appealMapper.toDTO(saved);
     }
 
     @Override
@@ -176,5 +210,34 @@ public class AppealServiceImpl implements AppealService {
         }
 
         documentRepository.delete(document);
+    }
+    @Override
+    public List<ApprovalResponseDTO> getPendingApprovals() {
+        return appealRepository.findByStatus(AppealStatus.PENDING)
+                .stream()
+                .map(appeal -> {
+                    ApprovalResponseDTO dto = new ApprovalResponseDTO();
+                    dto.setId(appeal.getId());
+                    dto.setTitle(appeal.getTitle());
+                    dto.setDescription(appeal.getDescription());
+                    dto.setEstimatedAmount(appeal.getEstimatedAmount());
+                    dto.setBeneficiaryCategory(appeal.getBeneficiaryCategory());
+                    dto.setDuration(appeal.getDuration());
+                    dto.setStatus(appeal.getStatus().toString());
+                    dto.setCreatedAt(appeal.getCreatedAt());
+                    dto.setDocuments(appeal.getDocuments().size());
+
+                    if (appeal.getCreatedBy() != null) {
+                        UserResponseDTO userDTO = new UserResponseDTO();
+                        userDTO.setId(appeal.getCreatedBy().getId());
+                        userDTO.setName(appeal.getCreatedBy().getName());
+                        userDTO.setEmail(appeal.getCreatedBy().getEmail());
+                        userDTO.setRole(appeal.getCreatedBy().getRole());
+                        dto.setCreatedBy(userDTO);
+                    }
+
+                    return dto;
+                })
+                .collect(Collectors.toList());
     }
 }

@@ -69,4 +69,16 @@ public class Appeal {
     }
     @OneToMany(mappedBy = "appeal", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Document> documents = new ArrayList<>();
+    @Column(name = "approval_date")
+    private LocalDateTime approvalDate;
+
+    @Column(name = "approval_remarks", columnDefinition = "LONGTEXT")
+    private String approvalRemarks;
+
+    @Column(name = "approver_id")
+    private Long approverId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approver_id", insertable = false, updatable = false)
+    private User approver;
 }

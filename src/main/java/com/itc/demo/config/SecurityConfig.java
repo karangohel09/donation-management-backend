@@ -42,6 +42,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()  // Allow preflight
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/me").authenticated()
+                        .requestMatchers("/api/appeals/**").authenticated()  // All authenticated users can access appeals
                         .requestMatchers("/api/settings/**").hasRole("SUPER_ADMIN")
                         .anyRequest().authenticated()
                 )
@@ -77,8 +78,9 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:3000",
+        configuration.setAllowedOriginPatterns(List.of("http://localhost:3000",
                 "http://localhost:3001",
+                "http://172.16.10.220",
                 "http://localhost:3002"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));

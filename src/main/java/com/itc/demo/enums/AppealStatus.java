@@ -4,5 +4,7 @@ public enum AppealStatus {
     PENDING,
     SUBMITTED,
     APPROVED,
-    REJECTED
+    REJECTED,
+    COMPLETED,      // Add this
+    ON_HOLD
 }

@@ -1,21 +1,26 @@
 package com.itc.demo.service.impl;
 
-import com.itc.demo.entity.*;
+import com.itc.demo.entity.Appeal;
+import com.itc.demo.entity.CommunicationHistory;
+import com.itc.demo.entity.Donor;
 import com.itc.demo.enums.CommunicationStatus;
 import com.itc.demo.enums.CommunicationTrigger;
-import com.itc.demo.dto.AutoTriggeredCommunicationDTO;
-import com.itc.demo.repository.*;
+import com.itc.demo.repository.AppealRepository;
+import com.itc.demo.enums.CommunicationChannel;
+import com.itc.demo.repository.CommunicationHistoryRepository;
+import com.itc.demo.repository.DonorRepository;
 import com.itc.demo.service.CommunicationService;
+import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -23,270 +28,229 @@ import java.util.stream.Collectors;
 public class CommunicationServiceImpl implements CommunicationService {
 
     @Autowired
+    private JavaMailSender mailSender;
+
+    @Autowired
     private DonorRepository donorRepository;
+
+    @Autowired
+    private AppealRepository appealRepository;
 
     @Autowired
     private CommunicationHistoryRepository communicationHistoryRepository;
 
-    @Autowired
-    private JavaMailSender javaMailSender;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    /**
-     * Notify all donors when an appeal is approved
-     */
     @Override
-    public void notifyDonorsOnApproval(Appeal appeal, Long approverUserId) {
+    public void sendCommunicationToAppealDonors(Long appealId, String channel, String subject, String message) {
+        log.info("=== STEP 1: Finding donors for appeal {} ===", appealId);
+
         try {
             // Get all donors associated with this appeal
-            List<Donor> relevantDonors = donorRepository.findByAppealId(appeal.getId());
+            List<Donor> donors = donorRepository.findDonorsByAppealId(appealId);
+            log.info("STEP 1: Found {} donors for appeal {}", donors.size(), appealId);
 
-            if (relevantDonors.isEmpty()) {
-                log.warn("No donors found for appeal: " + appeal.getId());
+            if (donors.isEmpty()) {
+                log.warn("No donors found for appeal {}", appealId);
                 return;
             }
 
-            log.info("Notifying {} donors about approval of appeal: {}", relevantDonors.size(), appeal.getId());
-
-            // Build approval message
-            String emailSubject = "Great News! Your Appeal \"" + appeal.getTitle() + "\" is Approved";
-            String emailContent = buildApprovalEmailContent(appeal);
-            String whatsappMessage = buildApprovalWhatsAppMessage(appeal);
-
-            // Send email notifications
-            sendEmailNotifications(appeal, relevantDonors, emailSubject, emailContent,
-                    CommunicationTrigger.APPROVAL, approverUserId);
-
-            // Send WhatsApp notifications (if service is available)
-            sendWhatsAppNotifications(appeal, relevantDonors, whatsappMessage,
-                    CommunicationTrigger.APPROVAL, approverUserId);
-
-            log.info("Successfully notified donors for appeal approval: {}", appeal.getId());
-
-        } catch (Exception e) {
-            log.error("Error notifying donors on approval: " + e.getMessage(), e);
-            // Don't throw exception - approval should not fail if communication fails
-        }
-    }
-
-    /**
-     * Notify all donors when an appeal is rejected
-     */
-    @Override
-    public void notifyDonorsOnRejection(Appeal appeal, String rejectionReason) {
-        try {
-            List<Donor> relevantDonors = donorRepository.findByAppealId(appeal.getId());
-
-            if (relevantDonors.isEmpty()) {
-                log.warn("No donors found for appeal: " + appeal.getId());
+            // Get appeal details
+            Appeal appeal = appealRepository.findById(appealId).orElse(null);
+            if (appeal == null) {
+                log.error("Appeal {} not found", appealId);
                 return;
             }
 
-            log.info("Notifying {} donors about rejection of appeal: {}", relevantDonors.size(), appeal.getId());
+            log.info("=== STEP 2: Checking SMTP configuration ===");
+            if (mailSender == null) {
+                log.error("STEP 2: JavaMailSender is NULL - email will fail!");
+                return;
+            }
+            log.info("STEP 2: JavaMailSender is configured");
 
-            String emailSubject = "Update on Your Appeal: \"" + appeal.getTitle() + "\"";
-            String emailContent = buildRejectionEmailContent(appeal, rejectionReason);
+            log.info("=== STEP 3: Sending {} communications via {} ===", donors.size(), channel);
 
-            sendEmailNotifications(appeal, relevantDonors, emailSubject, emailContent,
-                    CommunicationTrigger.REJECTION, null);
-
-            log.info("Successfully notified donors for appeal rejection: {}", appeal.getId());
-
-        } catch (Exception e) {
-            log.error("Error notifying donors on rejection: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Get all auto-triggered communications
-     */
-    @Override
-    public List<AutoTriggeredCommunicationDTO> getAutoTriggeredCommunications() {
-        return communicationHistoryRepository.findAll().stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Get auto-triggered communications for specific appeal
-     */
-    @Override
-    public List<AutoTriggeredCommunicationDTO> getAutoTriggeredCommunicationsByAppeal(Long appealId) {
-        return communicationHistoryRepository.findByAppealId(appealId).stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
-    }
-
-    // ===== Private Helper Methods =====
-
-    private String buildApprovalEmailContent(Appeal appeal) {
-        return "<!DOCTYPE html>\n" +
-                "<html>\n" +
-                "<head>\n" +
-                "  <style>\n" +
-                "    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n" +
-                "    .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n" +
-                "    .header { background-color: #28a745; color: white; padding: 20px; border-radius: 5px 5px 0 0; }\n" +
-                "    .content { border: 1px solid #ddd; padding: 20px; }\n" +
-                "    .footer { background-color: #f8f9fa; padding: 10px; font-size: 12px; color: #666; }\n" +
-                "    .amount { color: #28a745; font-weight: bold; font-size: 18px; }\n" +
-                "  </style>\n" +
-                "</head>\n" +
-                "<body>\n" +
-                "  <div class=\"container\">\n" +
-                "    <div class=\"header\">\n" +
-                "      <h2>✓ Approval Confirmed</h2>\n" +
-                "    </div>\n" +
-                "    <div class=\"content\">\n" +
-                "      <p>Dear Donor,</p>\n" +
-                "      <p>We are delighted to inform you that your appeal <strong>\"" + appeal.getTitle() + "\"</strong> has been officially <strong>APPROVED</strong>.</p>\n" +
-                "      <div style=\"background-color: #e8f5e9; padding: 15px; border-radius: 5px; margin: 20px 0;\">\n" +
-                "        <p><strong>Approval Details:</strong></p>\n" +
-                "        <p>Appeal ID: " + appeal.getId() + "</p>\n" +
-                "        <p>Approved Amount: <span class=\"amount\">₹" + appeal.getApprovedAmount().toPlainString() + "</span></p>\n" +
-                "        <p>Approval Date: " + LocalDateTime.now().toString() + "</p>\n" +
-                "      </div>\n" +
-                "      <p><strong>What's Next?</strong></p>\n" +
-                "      <ul>\n" +
-                "        <li>Implementation will commence shortly</li>\n" +
-                "        <li>We will keep you updated on progress with regular impact reports</li>\n" +
-                "        <li>Your contribution will create meaningful change</li>\n" +
-                "      </ul>\n" +
-                "      <p>Thank you for your generous support and trust in our mission!</p>\n" +
-                "      <p>Best regards,<br/>ITC × Anoopam Mission Team</p>\n" +
-                "    </div>\n" +
-                "    <div class=\"footer\">\n" +
-                "      <p>This is an automated notification. Please do not reply to this email.</p>\n" +
-                "    </div>\n" +
-                "  </div>\n" +
-                "</body>\n" +
-                "</html>";
-    }
-
-    private String buildApprovalWhatsAppMessage(Appeal appeal) {
-        return "🎉 *Great News!* 🎉\n\n" +
-                "Your appeal *\"" + appeal.getTitle() + "\"* has been *APPROVED*!\n\n" +
-                "✓ Approved Amount: ₹" + appeal.getApprovedAmount().toPlainString() + "\n" +
-                "✓ Appeal ID: " + appeal.getId() + "\n\n" +
-                "We are excited to begin implementation and will keep you updated with regular impact reports.\n\n" +
-                "Thank you for your generous support!\n\n" +
-                "ITC × Anoopam Mission Team";
-    }
-
-    private String buildRejectionEmailContent(Appeal appeal, String rejectionReason) {
-        return "<!DOCTYPE html>\n" +
-                "<html>\n" +
-                "<head>\n" +
-                "  <style>\n" +
-                "    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n" +
-                "    .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n" +
-                "    .header { background-color: #dc3545; color: white; padding: 20px; border-radius: 5px 5px 0 0; }\n" +
-                "    .content { border: 1px solid #ddd; padding: 20px; }\n" +
-                "  </style>\n" +
-                "</head>\n" +
-                "<body>\n" +
-                "  <div class=\"container\">\n" +
-                "    <div class=\"header\">\n" +
-                "      <h2>Appeal Status Update</h2>\n" +
-                "    </div>\n" +
-                "    <div class=\"content\">\n" +
-                "      <p>Dear Donor,</p>\n" +
-                "      <p>Thank you for submitting the appeal <strong>\"" + appeal.getTitle() + "\"</strong>.</p>\n" +
-                "      <p>After careful review, we regret to inform you that your appeal has been <strong>rejected</strong>.</p>\n" +
-                "      <p><strong>Reason for Rejection:</strong></p>\n" +
-                "      <p style=\"background-color: #f8d7da; padding: 15px; border-radius: 5px;\">" + rejectionReason + "</p>\n" +
-                "      <p>We appreciate your understanding. If you have any questions or wish to discuss further, please feel free to reach out to us.</p>\n" +
-                "      <p>Best regards,<br/>ITC × Anoopam Mission Team</p>\n" +
-                "    </div>\n" +
-                "  </div>\n" +
-                "</body>\n" +
-                "</html>";
-    }
-
-    private void sendEmailNotifications(Appeal appeal, List<Donor> donors, String subject,
-                                        String content, CommunicationTrigger trigger, Long approverUserId) {
-        try {
-            int sentCount = 0;
+            CommunicationChannel commChannel = CommunicationChannel.valueOf(channel.toUpperCase());
 
             for (Donor donor : donors) {
                 try {
-                    if (donor.getEmail() != null && !donor.getEmail().isEmpty()) {
-                        SimpleMailMessage message = new SimpleMailMessage();
-                        message.setTo(donor.getEmail());
-                        message.setSubject(subject);
-                        message.setText(content);
-                        // message.setFrom(fromEmail); // Configure in application.properties
-
-                        javaMailSender.send(message);
-                        sentCount++;
-
-                        log.info("Email sent to: {}", donor.getEmail());
+                    if (commChannel == CommunicationChannel.EMAIL) {
+                        sendEmail(donor.getEmail(), subject, message, appeal);
+                        log.info("STEP 3: Email sent to {}", donor.getEmail());
+                    } else if (commChannel == CommunicationChannel.WHATSAPP) {
+                        sendWhatsApp(donor.getPhoneNumber(), message, appeal);
+                        log.info("STEP 3: WhatsApp message sent to {}", donor.getPhoneNumber());
+                    } else if (commChannel == CommunicationChannel.SMS) {
+                        sendSMS(donor.getPhoneNumber(), message);
+                        log.info("STEP 3: SMS sent to {}", donor.getPhoneNumber());
                     }
+
+                    // Log to database
+                    logCommunication(donor, appeal, channel, message, CommunicationStatus.SENT, CommunicationTrigger.MANUAL);
+                    log.info("STEP 3: Communication logged for donor {}", donor.getId());
+
                 } catch (Exception e) {
-                    log.error("Failed to send email to {}: {}", donor.getEmail(), e.getMessage());
+                    log.error("Error sending communication to donor {}: {}", donor.getId(), e.getMessage(), e);
+                    // Log failed attempt
+                    logCommunication(donor, appeal, channel, message, CommunicationStatus.FAILED, CommunicationTrigger.MANUAL);
                 }
             }
 
-            // Log communication history
-            logCommunication(appeal.getId(), trigger, "EMAIL", sentCount, content,
-                    CommunicationStatus.SENT, approverUserId);
+            log.info("=== STEP 4: All communications processed ===");
 
         } catch (Exception e) {
-            log.error("Error sending email notifications: " + e.getMessage(), e);
-            logCommunication(appeal.getId(), trigger, "EMAIL", 0, content,
-                    CommunicationStatus.FAILED, approverUserId);
+            log.error("Error in sendCommunicationToAppealDonors: ", e);
+            throw new RuntimeException("Failed to send communications: " + e.getMessage());
         }
     }
 
-    private void sendWhatsAppNotifications(Appeal appeal, List<Donor> donors, String message,
-                                           CommunicationTrigger trigger, Long approverUserId) {
-        // TODO: Implement WhatsApp integration using Twilio, WhatsApp Business API, etc.
-        // For now, just log that it's pending
-        int phoneCount = (int) donors.stream()
-                .filter(d -> d.getPhoneNumber() != null && !d.getPhoneNumber().isEmpty())
-                .count();
+    @Override
+    public void notifyDonorsOnApproval(Appeal appeal, Long approverUserId) {
+        log.info("Notifying donors of appeal approval: {}", appeal.getId());
 
-        if (phoneCount > 0) {
-            log.info("WhatsApp notification queued for {} recipients", phoneCount);
-            logCommunication(appeal.getId(), trigger, "WHATSAPP", phoneCount, message,
-                    CommunicationStatus.PENDING, approverUserId);
+        String message = "Great news! Your donation appeal '" + appeal.getTitle() + "' has been approved. "
+                + "Your donations will be utilized as per the plan. Thank you for your contribution!";
+
+        List<Donor> donors = donorRepository.findDonorsByAppealId(appeal.getId());
+
+        for (Donor donor : donors) {
+            try {
+                // Send email
+                sendEmail(donor.getEmail(),
+                        "Appeal Approved: " + appeal.getTitle(),
+                        message,
+                        appeal);
+
+                logCommunication(donor, appeal, "EMAIL", message, CommunicationStatus.SENT, CommunicationTrigger.APPROVAL);
+                log.info("Approval notification sent to {}", donor.getEmail());
+            } catch (Exception e) {
+                log.error("Error notifying donor {} of approval: {}", donor.getId(), e.getMessage());
+                logCommunication(donor, appeal, "EMAIL", message, CommunicationStatus.FAILED, CommunicationTrigger.APPROVAL);
+            }
         }
     }
 
-    private void logCommunication(Long appealId, CommunicationTrigger trigger, String channel,
-                                  int recipientCount, String content, CommunicationStatus status,
-                                  Long approverUserId) {
+    @Override
+    public void notifyDonorsOnRejection(Appeal appeal, String rejectionReason) {
+        log.info("Notifying donors of appeal rejection: {}", appeal.getId());
+
+        String message = "We regret to inform you that the appeal '" + appeal.getTitle() + "' has been rejected. "
+                + "Reason: " + rejectionReason + ". "
+                + "Please feel free to reapply with a revised plan.";
+
+        List<Donor> donors = donorRepository.findDonorsByAppealId(appeal.getId());
+
+        for (Donor donor : donors) {
+            try {
+                // Send email
+                sendEmail(donor.getEmail(),
+                        "Appeal Rejected: " + appeal.getTitle(),
+                        message,
+                        appeal);
+
+                logCommunication(donor, appeal, "EMAIL", message, CommunicationStatus.SENT, CommunicationTrigger.REJECTION);
+                log.info("Rejection notification sent to {}", donor.getEmail());
+            } catch (Exception e) {
+                log.error("Error notifying donor {} of rejection: {}", donor.getId(), e.getMessage());
+                logCommunication(donor, appeal, "EMAIL", message, CommunicationStatus.FAILED, CommunicationTrigger.REJECTION);
+            }
+        }
+    }
+
+    @Override
+    public List<Object> getAutoTriggeredCommunications() {
+        log.info("Fetching all auto-triggered communications");
+        return new ArrayList<>(communicationHistoryRepository.findAll());
+    }
+
+    @Override
+    public List<Object> getAutoTriggeredCommunicationsByAppeal(Long appealId) {
+        log.info("Fetching auto-triggered communications for appeal {}", appealId);
+        return new ArrayList<>(communicationHistoryRepository.findByAppealId(appealId));
+    }
+
+    /**
+     * Send email using SMTP
+     */
+    private void sendEmail(String to, String subject, String body, Appeal appeal) throws Exception {
+        log.debug("Preparing email to: {}", to);
+
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+        helper.setTo(to);
+        helper.setSubject(subject);
+
+        // Add appeal context to email body
+        String htmlBody = "<html><body>"
+                + "<h2>" + subject + "</h2>"
+                + "<p>" + body + "</p>"
+                + "<hr/>"
+                + "<p><strong>Appeal Details:</strong></p>"
+                + "<p>Title: " + appeal.getTitle() + "</p>"
+                + "<p>Description: " + appeal.getDescription() + "</p>"
+                + "<p>Target Amount: " + appeal.getApprovedAmount() + "</p>"
+                + "</body></html>";
+
+        helper.setText(htmlBody, true);
+        helper.setFrom("karangohel2093@gmail.com");
+
         try {
-            CommunicationHistory history = CommunicationHistory.builder()
-                    .appealId(appealId)
-                    .triggerType(trigger)
-                    .channel(channel)
-                    .recipientCount(recipientCount)
-                    .content(content)
-                    .status(status)
-                    .sentByUserId(approverUserId)
-                    .sentDate(LocalDateTime.now())
-                    .build();
+            mailSender.send(message);
+            log.info("Email sent successfully to: {}", to);
+        } catch (Exception e) {
+            log.error("Failed to send email to {}: {}", to, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * Send WhatsApp message (placeholder - requires Twilio or similar)
+     */
+    private void sendWhatsApp(String phoneNumber, String message, Appeal appeal) {
+        log.info("WhatsApp integration pending - would send to: {}", phoneNumber);
+        // TODO: Integrate Twilio or WhatsApp Business API
+        // For now, just log that it was attempted
+    }
+
+    /**
+     * Send SMS (placeholder - requires Twilio or similar)
+     */
+    private void sendSMS(String phoneNumber, String message) {
+        log.info("SMS integration pending - would send to: {}", phoneNumber);
+        // TODO: Integrate Twilio for SMS
+        // For now, just log that it was attempted
+    }
+
+    /**
+     * Log communication to database
+     */
+    private void logCommunication(Donor donor,
+                                  Appeal appeal,
+                                  String channel,
+                                  String message,
+                                  CommunicationStatus status,
+                                  CommunicationTrigger trigger) {
+        try {
+            CommunicationHistory history = new CommunicationHistory();
+
+            history.setAppealId(appeal.getId());
+            history.setTriggerType(trigger);
+            history.setChannel(channel.toUpperCase());
+            history.setRecipientCount(1); // one donor per record
+            history.setContent(message);
+            history.setStatus(status);
+            history.setSentDate(LocalDateTime.now());
+            history.setSentByUserId(appeal.getApproverId()); // or null if manual
+            history.setErrorMessage(
+                    status == CommunicationStatus.FAILED ? "Delivery failed" : null
+            );
 
             communicationHistoryRepository.save(history);
-            log.info("Communication logged: Appeal {} via {}", appealId, channel);
 
+            log.debug("Communication logged for donor {}", donor.getId());
         } catch (Exception e) {
-            log.error("Failed to log communication: " + e.getMessage(), e);
+            log.error("Error logging communication to database", e);
         }
     }
-
-    private AutoTriggeredCommunicationDTO convertToDTO(CommunicationHistory history) {
-        return AutoTriggeredCommunicationDTO.builder()
-                .id(history.getId())
-                .appealId(history.getAppealId())
-                .triggerType(history.getTriggerType().toString().toLowerCase())
-                .channels(history.getChannel())
-                .recipientCount(history.getRecipientCount())
-                .status(history.getStatus().toString().toLowerCase())
-                .sentDate(history.getSentDate())
-                .build();
-    }
 }
+

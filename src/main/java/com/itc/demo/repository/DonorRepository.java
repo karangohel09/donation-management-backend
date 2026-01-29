@@ -7,17 +7,22 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface DonorRepository extends JpaRepository<Donor, Long> {
 
-    Optional<Donor> findByEmail(String email);
+    // Search by name or email
+    List<Donor> findByNameContainingIgnoreCaseOrEmailContainingIgnoreCase(String name, String email);
 
-    @Query("SELECT DISTINCT d FROM Donor d " +
-            "WHERE d.isActive = true AND d.id IN " +
-            "(SELECT da.donor.id FROM DonorAppeal da WHERE da.appeal.id = :appealId)")
-    List<Donor> findByAppealId(@Param("appealId") Long appealId);
+    // Find donors by appeal
+    @Query("SELECT DISTINCT d FROM DonorAppeal da JOIN da.donor d WHERE da.appeal.id = :appealId")
+    List<Donor> findDonorsByAppealId(@Param("appealId") Long appealId);
 
-    List<Donor> findByIsActiveTrue();
+    // Find by email
+    Donor findByEmail(String email);
+
+    // Find by phone number
+    Donor findByPhoneNumber(String phoneNumber);
 }
+
+

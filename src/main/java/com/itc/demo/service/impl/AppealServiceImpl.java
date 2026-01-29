@@ -109,9 +109,9 @@ public class AppealServiceImpl implements AppealService {
 
         appeal.setStatus(AppealStatus.APPROVED);
         appeal.setApprovedAmount(request.getApprovedAmount());
-        appeal.setApprovalRemarks(request.getRemarks());      // ✅ Add this
-        appeal.setApprovalDate(LocalDateTime.now());          // ✅ Add this
-        appeal.setApproverId(approverUserId);                 // ✅ Add this
+        appeal.setApprovalRemarks(request.getRemarks());
+        appeal.setApprovalDate(LocalDateTime.now());
+        appeal.setApproverId(approverUserId);
 
         Appeal saved = appealRepository.save(appeal);
 

@@ -1,5 +1,6 @@
 package com.itc.demo.service.impl;
 
+import com.itc.demo.dto.request.SendCommunicationRequest;
 import com.itc.demo.entity.Appeal;
 import com.itc.demo.entity.CommunicationHistory;
 import com.itc.demo.entity.Donor;
@@ -13,6 +14,7 @@ import com.itc.demo.service.CommunicationService;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -38,6 +40,9 @@ public class CommunicationServiceImpl implements CommunicationService {
 
     @Autowired
     private CommunicationHistoryRepository communicationHistoryRepository;
+
+    @Value("${spring.mail.username:karangohel2093@gmail.com}")
+    private String fromEmail;
 
     @Override
     public void sendCommunicationToAppealDonors(Long appealId, String channel, String subject, String message) {
@@ -69,7 +74,16 @@ public class CommunicationServiceImpl implements CommunicationService {
 
             log.info("=== STEP 3: Sending {} communications via {} ===", donors.size(), channel);
 
-            CommunicationChannel commChannel = CommunicationChannel.valueOf(channel.toUpperCase());
+            // Normalize channel to uppercase
+            String normalizedChannel = channel.toUpperCase();
+            CommunicationChannel commChannel;
+
+            try {
+                commChannel = CommunicationChannel.valueOf(normalizedChannel);
+            } catch (IllegalArgumentException e) {
+                log.error("Invalid channel: {}", channel);
+                return;
+            }
 
             for (Donor donor : donors) {
                 try {
@@ -85,13 +99,13 @@ public class CommunicationServiceImpl implements CommunicationService {
                     }
 
                     // Log to database
-                    logCommunication(donor, appeal, channel, message, CommunicationStatus.SENT, CommunicationTrigger.MANUAL);
+                    logCommunication(donor, appeal, channel.toUpperCase(), message, CommunicationStatus.SENT, CommunicationTrigger.MANUAL);
                     log.info("STEP 3: Communication logged for donor {}", donor.getId());
 
                 } catch (Exception e) {
                     log.error("Error sending communication to donor {}: {}", donor.getId(), e.getMessage(), e);
                     // Log failed attempt
-                    logCommunication(donor, appeal, channel, message, CommunicationStatus.FAILED, CommunicationTrigger.MANUAL);
+                    logCommunication(donor, appeal, channel.toUpperCase(), message, CommunicationStatus.FAILED, CommunicationTrigger.MANUAL);
                 }
             }
 
@@ -99,6 +113,155 @@ public class CommunicationServiceImpl implements CommunicationService {
 
         } catch (Exception e) {
             log.error("Error in sendCommunicationToAppealDonors: ", e);
+            throw new RuntimeException("Failed to send communications: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void sendCommunication(SendCommunicationRequest request) throws Exception {
+        log.info("Processing communication request for appeal {} via {} to {} recipient type",
+                request.getAppealId(), request.getChannel(), request.getRecipientType());
+
+        // Validate request
+        if (!request.isValid() || !request.isValidRecipientType()) {
+            throw new IllegalArgumentException("Invalid communication request");
+        }
+
+        // Normalize channel to uppercase
+        String normalizedChannel = request.getChannel().toUpperCase();
+
+        // Validate channel
+        try {
+            CommunicationChannel.valueOf(normalizedChannel);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid channel: " + request.getChannel());
+        }
+
+        // Verify appeal exists
+        Appeal appeal = appealRepository.findById(request.getAppealId())
+                .orElseThrow(() -> new Exception("Appeal not found with ID: " + request.getAppealId()));
+
+        // Route based on recipient type
+        if ("ALL_DONORS".equals(request.getRecipientType())) {
+            log.info("Routing to sendCommunicationToAppealDonors");
+            sendCommunicationToAppealDonors(
+                    request.getAppealId(),
+                    normalizedChannel,
+                    request.getSubject(),
+                    request.getMessage()
+            );
+        } else if ("SELECTED_DONORS".equals(request.getRecipientType())) {
+            log.info("Routing to sendCommunicationToSpecificDonors with {} donors",
+                    request.getDonorIds().size());
+            sendCommunicationToSpecificDonors(
+                    request.getDonorIds(),
+                    normalizedChannel,
+                    request.getSubject(),
+                    request.getMessage(),
+                    request.getAppealId()
+            );
+        }
+
+        log.info("Communication sent successfully");
+    }
+
+    @Override
+    public void sendCommunicationToSpecificDonors(List<Integer> donorIds, String channel, String subject, String message, Long appealId) throws Exception {
+        log.info("=== STEP 1: Finding {} specific donors ===", donorIds.size());
+
+        try {
+            // Validate that donors were provided
+            if (donorIds == null || donorIds.isEmpty()) {
+                throw new Exception("No donor IDs provided");
+            }
+
+            // Convert Integer list to Long list for query
+            List<Long> longDonorIds = donorIds.stream()
+                    .map(Integer::longValue)
+                    .toList();
+
+            // Get specific donors
+            List<Donor> donors = donorRepository.findAllById(longDonorIds);
+
+            if (donors.isEmpty()) {
+                throw new Exception("No donors found with provided IDs");
+            }
+
+            log.info("STEP 1: Found {} donors", donors.size());
+
+            // Log if some IDs were not found
+            if (donors.size() < donorIds.size()) {
+                log.warn("Only {} donors found out of {} requested IDs", donors.size(), donorIds.size());
+            }
+
+            log.info("=== STEP 2: Checking SMTP configuration ===");
+            if (mailSender == null) {
+                log.error("STEP 2: JavaMailSender is NULL - email will fail!");
+                return;
+            }
+            log.info("STEP 2: JavaMailSender is configured");
+
+            log.info("=== STEP 3: Sending {} communications via {} ===", donors.size(), channel);
+
+            // Normalize channel to uppercase
+            String normalizedChannel = channel.toUpperCase();
+            CommunicationChannel commChannel;
+
+            try {
+                commChannel = CommunicationChannel.valueOf(normalizedChannel);
+            } catch (IllegalArgumentException e) {
+                log.error("Invalid channel: {}", channel);
+                return;
+            }
+
+            // Get appeal details for logging/personalization
+            Appeal appeal = null;
+            if (appealId != null) {
+                appeal = appealRepository.findById(appealId).orElse(null);
+                if (appeal != null) {
+                    log.info("STEP 2.5: Appeal details fetched for ID {}", appealId);
+                } else {
+                    log.warn("STEP 2.5: Appeal not found for ID {}, emails will be sent without appeal details", appealId);
+                }
+            } else {
+                log.warn("STEP 2.5: No appealId provided, emails will be sent without appeal details");
+            }
+
+            int successCount = 0;
+            for (Donor donor : donors) {
+                try {
+                    if (commChannel == CommunicationChannel.EMAIL) {
+                        sendEmail(donor.getEmail(), subject, message, appeal);
+                        log.info("STEP 3: Email sent to {}", donor.getEmail());
+                    } else if (commChannel == CommunicationChannel.WHATSAPP) {
+                        sendWhatsApp(donor.getPhoneNumber(), message, appeal);
+                        log.info("STEP 3: WhatsApp message sent to {}", donor.getPhoneNumber());
+                    } else if (commChannel == CommunicationChannel.SMS) {
+                        sendSMS(donor.getPhoneNumber(), message);
+                        log.info("STEP 3: SMS sent to {}", donor.getPhoneNumber());
+                    }
+
+                    // Log to database (with or without appeal)
+                    if (appeal != null) {
+                        logCommunication(donor, appeal, normalizedChannel, message, CommunicationStatus.SENT, CommunicationTrigger.MANUAL);
+                    }
+
+                    successCount++;
+                    log.info("STEP 3: Communication processed for donor {}", donor.getId());
+
+                } catch (Exception e) {
+                    log.error("Error sending communication to donor {}: {}", donor.getId(), e.getMessage(), e);
+                    // Log failed attempt if appeal available
+                    if (appeal != null) {
+                        logCommunication(donor, appeal, normalizedChannel, message, CommunicationStatus.FAILED, CommunicationTrigger.MANUAL);
+                    }
+                }
+            }
+
+            log.info("=== STEP 4: Completed. Sent to {}/{} selected donors ===", successCount, donors.size());
+
+        } catch (Exception e) {
+            log.error("Error in sendCommunicationToSpecificDonors: ", e);
             throw new RuntimeException("Failed to send communications: " + e.getMessage());
         }
     }
@@ -169,32 +332,39 @@ public class CommunicationServiceImpl implements CommunicationService {
     }
 
     /**
-     * Send email using SMTP
+     * Send email using SMTP - WITH NULL SAFETY FOR APPEAL
      */
     private void sendEmail(String to, String subject, String body, Appeal appeal) throws Exception {
         log.debug("Preparing email to: {}", to);
 
-        MimeMessage message = mailSender.createMimeMessage();
-        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-        helper.setTo(to);
-        helper.setSubject(subject);
-
-        // Add appeal context to email body
-        String htmlBody = "<html><body>"
-                + "<h2>" + subject + "</h2>"
-                + "<p>" + body + "</p>"
-                + "<hr/>"
-                + "<p><strong>Appeal Details:</strong></p>"
-                + "<p>Title: " + appeal.getTitle() + "</p>"
-                + "<p>Description: " + appeal.getDescription() + "</p>"
-                + "<p>Target Amount: " + appeal.getApprovedAmount() + "</p>"
-                + "</body></html>";
-
-        helper.setText(htmlBody, true);
-        helper.setFrom("karangohel2093@gmail.com");
-
         try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setTo(to);
+            helper.setSubject(subject);
+
+            // Add appeal context to email body (WITH NULL SAFETY)
+            String htmlBody = "<html><body>"
+                    + "<h2>" + subject + "</h2>"
+                    + "<p>" + body + "</p>"
+                    + "<hr/>";
+
+            // Only add appeal details if appeal exists
+            if (appeal != null) {
+                htmlBody += "<p><strong>Appeal Details:</strong></p>"
+                        + "<p>Title: " + (appeal.getTitle() != null ? appeal.getTitle() : "N/A") + "</p>"
+                        + "<p>Description: " + (appeal.getDescription() != null ? appeal.getDescription() : "N/A") + "</p>"
+                        + "<p>Target Amount: " + (appeal.getApprovedAmount() != null ? appeal.getApprovedAmount() : appeal.getEstimatedAmount() != null ? appeal.getEstimatedAmount() : "N/A") + "</p>";
+            }
+
+            htmlBody += "</body></html>";
+
+            helper.setText(htmlBody, true);
+
+            // Use configured email from application.properties
+            helper.setFrom(fromEmail);
+
             mailSender.send(message);
             log.info("Email sent successfully to: {}", to);
         } catch (Exception e) {
@@ -253,4 +423,3 @@ public class CommunicationServiceImpl implements CommunicationService {
         }
     }
 }
-

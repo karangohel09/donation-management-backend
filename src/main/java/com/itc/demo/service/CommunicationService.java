@@ -1,9 +1,21 @@
 package com.itc.demo.service;
 
+import com.itc.demo.dto.request.SendCommunicationRequest;
 import com.itc.demo.entity.Appeal;
 import java.util.List;
 
 public interface CommunicationService {
+
+    /**
+     * Send communication to specific or all donors (NEW - handles DTO)
+     */
+    void sendCommunication(SendCommunicationRequest request) throws Exception;
+
+    /**
+     * Send communication to specific donors only (NEW)
+     * ✅ FIX: Now accepts appealId parameter so Appeal can be fetched
+     */
+    void sendCommunicationToSpecificDonors(List<Integer> donorIds, String channel, String subject, String message, Long appealId) throws Exception;
 
     /**
      * Send approval notification to all donors of an appeal
@@ -29,4 +41,5 @@ public interface CommunicationService {
      * Get auto-triggered communications for specific appeal
      */
     List<Object> getAutoTriggeredCommunicationsByAppeal(Long appealId);
+
 }

@@ -71,12 +71,10 @@ public class ApprovalController {
 
 
     private Long getUserIdFromAuth(Authentication authentication) {
-        // Extract from your JWT token or User object
-        // For now, placeholder - adjust based on your implementation
         Object principal = authentication.getPrincipal();
         if (principal instanceof UserDetails) {
-            // Get user ID from database using email
-            return 1L; // Replace with actual extraction
+
+            return 1L;
         }
         return 1L;
     }

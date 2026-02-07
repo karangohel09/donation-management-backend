@@ -2,6 +2,24 @@ server:
   port: 5000
 
 spring:
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: karangohel2093@gmail.com
+    password: ftafyyjszpxdongk
+    default-encoding: UTF-8
+
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+        connectiontimeout: 5000
+        timeout: 5000
+        writetimeout: 5000
+
   application:
     name: donation-management-system
 
@@ -19,19 +37,6 @@ spring:
       hibernate:
         format_sql: true
 
-  mail:
-    host: smtp.gmail.com
-    port: 587
-    username: karangohel2093@gmail.com
-    password: ftaf yyjs zpxd ongk
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-            required: true
-    default-encoding: UTF-8
 
 jwt:
   secret: ITC_DONATION_MANAGEMENT_SYSTEM_SECRET_2026!!!
